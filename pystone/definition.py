@@ -65,6 +65,9 @@ class Container:
 
     def __getattr__(self, name):
         if name in self.entries:
+            entry = self.entries[name]
+            if isinstance(entry, Element):
+                return entry.process(self.soup_ref.value)
             return self.entries[name]
 
     def set_selector_root(self, root):
@@ -80,14 +83,15 @@ class Container:
 
 class Definition:
     """Takes in a json definition file and stores its name/definition"""
-    def __init__(self, path: Union[str, Path], fmt_url: str, *, session: Optional[Session] = None):
+    def __init__(self, path: Union[str, Path], fmt_url: str, *, session: Optional[Session] = Session()):
         if isinstance(path, str):
             path = Path(path)
         if path.suffix != '.json':
             raise Exception('something is wrong.. why is this loading a non-json file?')
+        self.fmt_url = fmt_url
         self.name = path.stem
         self.tree = Container(self.name)
-        self.session = session or Session()
+        self.session = session
 
         with open(path.expanduser()) as f:
             json_data = loads(f.read())
@@ -102,13 +106,22 @@ class Definition:
                     v
                 ))
             else:
-                # build a Container and recurse
+                # build a new Container and recurse
                 c = Container(k.lower())
                 if 'ROOT' in k:
                     selector_root = k['ROOT']['selector']
 
                 self._build_tree(v, root=c)
                 root.add(k.lower(), c)
+
+    def process(self, vars: Dict[str, str]):
+        response = self.session.get(
+            self.fmt_url.format(
+                **vars
+            )
+        )
+        response.raise_for_status()
+        self.tree.soup_ref.value = BeautifulSoup(response.text, features="html.parser")
 
     def __getattr__(self, name):
         return getattr(self.tree, name)
