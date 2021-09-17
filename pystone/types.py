@@ -1,4 +1,11 @@
-from typing import Dict, Literal, Union
+from typing import Dict, Literal, Union, TypedDict
 
 LangOptions = Literal['en']
-Definitions = Dict[str, Union[str, Dict[str, str]]]
+Definition = Dict[str, Union[str, Dict[str, str]]]
+
+
+class MetaDict(TypedDict):
+    version: str
+    userAgentDesktop: str
+    userAgentMobile: str
+    applicableUris: Dict[str, str]

@@ -12,10 +12,10 @@ T = TypeVar('T')
 class Reference(Generic[T]):
     """Represents a reference to something which may not exist yet."""
     def __init__(self, initial_value: Optional[T] = None):
-        self._value: T = initial_value
+        self._value = initial_value
 
     @property
-    def value(self) -> T:
+    def value(self) -> Optional[T]:
         return self._value
 
     @value.setter
@@ -40,15 +40,27 @@ class Element:
         selection = soup.select_one(self.selector)
         if self.attribute is not None:
             # TODO: this is fragile; fix
-            text = selection[self.attribute]
+            try:
+                text = selection[self.attribute]
+            except TypeError:  # NoneType
+                text = ''
         else:
-            text = selection.text
+            try:
+                text = selection.text
+            except AttributeError:  # NoneType
+                text = ''
 
         if self.regex is not None:
             # TODO: this is fragile; fix
-            return self.regex.search(text).group(1)
+            try:
+                return self.regex.search(text).group(1)
+            except AttributeError:  # NoneType
+                return ''
         else:
             return text
+
+    def __repr__(self):
+        return f'<Element:{self.name}>'
 
 
 class Container:
@@ -70,6 +82,22 @@ class Container:
                 return entry.process(self.soup_ref.value)
             return self.entries[name]
 
+    def __iter__(self):
+        def internal_iterator():
+            for entry in self.entries:
+                yield entry
+        return internal_iterator()
+
+    def to_json(self):
+        json = {self.name: {}}
+        for entry in self.entries.values():
+            if isinstance(entry, Element):
+                json[self.name].update({entry.name: entry.process(self.soup_ref.value)})
+            else:  # container
+                json[self.name].update({entry.name: entry.to_json()})
+
+        return json
+
     def set_selector_root(self, root):
         self.selector_root = root   
 
@@ -79,6 +107,9 @@ class Container:
 
     def __dir__(self):
         return self.entries.keys()
+
+    def __repr__(self):
+        return f'<Container:{self.name}>'
 
 
 class Definition:
@@ -108,8 +139,8 @@ class Definition:
             else:
                 # build a new Container and recurse
                 c = Container(k.lower())
-                if 'ROOT' in k:
-                    selector_root = k['ROOT']['selector']
+                # if 'ROOT' in k:
+                #     selector_root = k['ROOT']['selector']
 
                 self._build_tree(v, root=c)
                 root.add(k.lower(), c)
@@ -121,7 +152,12 @@ class Definition:
             )
         )
         response.raise_for_status()
+        with open(self.name + '.html', 'w') as f:
+            f.write(response.text)
         self.tree.soup_ref.value = BeautifulSoup(response.text, features="html.parser")
+
+    def to_json(self):
+        return self.tree.to_json()
 
     def __getattr__(self, name):
         return getattr(self.tree, name)
